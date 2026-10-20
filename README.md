@@ -1,131 +1,101 @@
 # rePredRet Models Data Repository
 
-This repository contains pre-computed retention time prediction models for the [rePredRet](https://github.com/stanstrup/rePredRet) package.
+This repository contains pre-built retention time prediction models for the [rePredRet](https://github.com/stanstrup-metabolomics/rePredRet) package.
 
 ## Overview
 
-**rePredRet** predicts retention times (RTs) by directly mapping between chromatographic systems using monotonically constrained GAMs. This data repository contains ~50,000 pre-computed prediction models between LC-MS systems from the [RepoRT](https://github.com/michaelwitting/RepoRT) database.
+**rePredRet** predicts retention times (RTs) by directly mapping between chromatographic systems using monotonically constrained GAMs. This repository contains ~50,000 models between the reversed-phase (RP) systems of the [RepoRT](https://github.com/michaelwitting/RepoRT) database that share at least 10 compounds.
+
+The models are built and updated automatically by the [Build and Update Models](https://github.com/stanstrup-metabolomics/rePredRet/actions/workflows/build-models.yml) workflow in the rePredRet repository. Do not edit model files by hand.
 
 ## Repository Structure
 
 ```
 rePredRet-models/
-├── models/                    # Model directories
-│   ├── 0001_to_0002/         # Model from system 0001 to 0002
-│   │   ├── model.json        # Model data for web viewer (30KB)
-│   │   ├── model.rds         # R object for predictions (35KB)
-│   │   └── calibration_data.csv  # Calibration points (8KB)
-│   └── ... [~50,000 models]
-├── build_cache.rds           # Build state tracking
-├── model_index.csv           # Searchable model metadata
-└── README.md                 # This file
+├── models/                       # One directory per model
+│   ├── 0001_to_0002/             # Model from system 0001 (source) to 0002 (target)
+│   │   ├── model.json            # Prediction grid, calibration data and statistics
+│   │   ├── model.rds             # R model object (Git LFS)
+│   │   ├── ci_grid.csv           # Prediction grid
+│   │   └── calibration_data.csv  # Calibration compounds
+│   └── ...
+├── model_index.csv               # One row per model with statistics
+├── report_version.txt            # RepoRT commit the models were built from
+├── build_cache.rds               # Build state for incremental updates (Git LFS)
+└── README.md
 ```
 
 ## Model Files
 
-Each model directory contains 3 files:
+- **model.json**: `sys1_id`, `sys2_id`, `n_compounds`, `method`, `predictions` (rows with `x`, `pred`, `lower`, `upper`: predicted target RT with 95% prediction interval on a grid of 1000 source RTs), `calibration` (rows with `x`, `y`, `compound`) and `stats` (`median_ci_width`, `median_error`, `build_time`). Used by the web viewer and `rePredRet_model()`.
+- **model.rds**: the model object from `rePredRet::build_model()`. Stored in Git LFS.
+- **ci_grid.csv**: the prediction grid as CSV (`rt_source`, `rt_target_predicted`, `ci_lower`, `ci_upper`).
+- **calibration_data.csv**: the calibration compounds (`rt_source`, `rt_target`, `compound_id`: InChI without stereochemistry).
 
-### model.json (~30KB)
-JSON file with model data for the interactive web viewer:
-- Model metadata (system IDs, compound count)
-- Prediction curve (RT predictions with confidence intervals)
-- Calibration data points
-- Model statistics
+## Model Index
 
-### model.rds (~35KB)
-R data file containing the fitted GAM model object:
-- Used by `rePredRet` package for making predictions
-- Contains full model specification
-- Can be loaded with `readRDS()`
+`model_index.csv` has one row per model:
 
-### calibration_data.csv (~8KB)
-CSV file with calibration compound data:
-- Columns: `rt_source`, `rt_target`, `compound_id`
-- Used for transparency and verification
-- Can be loaded with any CSV reader
+| Column | Description |
+|--------|-------------|
+| `sys1_id` | Source system ID |
+| `sys2_id` | Target system ID |
+| `n_compounds` | Number of calibration compounds |
+| `median_ci_width` | Median width of the 95% prediction interval (minutes) |
+| `median_error` | Median absolute error at the calibration compounds (minutes) |
 
 ## Usage
 
 ### From R
 
 ```r
-# Install rePredRet package
-remotes::install_github("stanstrup/rePredRet")
-
-# Load a specific model
+remotes::install_github("stanstrup-metabolomics/rePredRet")
 library(rePredRet)
-model_path <- "https://raw.githubusercontent.com/stanstrup/rePredRet-models/main/models/0001_to_0002/model.rds"
-model <- readRDS(url(model_path))
 
-# Or use package functions
-predictions <- rePredRet_predict(...)
+models <- rePredRet_models()              # the model index
+model <- rePredRet_model("0001", "0002")  # model.json contents
+plot_model("0001", "0002")
 ```
 
-### From Web Viewer
+Files are fetched on demand and cached locally.
 
-The [rePredRet website](https://stanstrup.github.io/rePredRet/) provides an interactive viewer that fetches models from this repository on-demand.
+### Web Viewer
 
-### Programmatic Access
+The [model viewer](https://stanstrup-metabolomics.github.io/rePredRet/model_viewer.html) fetches models from this repository on demand.
 
-Fetch model data via raw GitHub URLs:
+### Direct Download
 
 ```bash
-# Get model JSON
-curl https://raw.githubusercontent.com/stanstrup/rePredRet-models/main/models/0001_to_0002/model.json
+# Model index and a model
+curl -O https://raw.githubusercontent.com/stanstrup-metabolomics/rePredRet-models/main/model_index.csv
+curl -O https://raw.githubusercontent.com/stanstrup-metabolomics/rePredRet-models/main/models/0001_to_0002/model.json
 
-# Get model index
-curl https://raw.githubusercontent.com/stanstrup/rePredRet-models/main/model_index.csv
+# LFS files (.rds) must be downloaded from media.githubusercontent.com;
+# raw.githubusercontent.com only returns the LFS pointer
+curl -O https://media.githubusercontent.com/media/stanstrup-metabolomics/rePredRet-models/main/models/0001_to_0002/model.rds
 ```
-
-## Model Index
-
-The `model_index.csv` file contains metadata for all models:
-- `model_key`: Model identifier (e.g., "0001_to_0002")
-- `from_id`: Source system ID
-- `to_id`: Target system ID
-- `method_type`: Chromatography method (RP, HILIC)
-- `n_compounds`: Number of calibration compounds
-- `median_error`: Median prediction error (seconds)
-- `median_ci_width`: Median confidence interval width
-- `build_time`: Model building time (seconds)
 
 ## Model Building
 
-Models are automatically rebuilt when:
-- New datasets added to RepoRT
-- Existing dataset data changes
-- Algorithm improvements
+The workflow checks RepoRT daily and rebuilds when its master branch has changed:
 
-Rebuild process:
-1. GitHub Actions workflow detects RepoRT updates
-2. Computes MD5 hashes of dataset RT data
-3. Rebuilds only models with changed source data
-4. Updates this repository via sparse checkout
-
-See [build_cache.rds](./build_cache.rds) for current build state.
+1. Datasets are compared to `build_cache.rds` by MD5 hash of their RT data
+2. Only models involving new or changed datasets (or with missing files) are rebuilt; models for removed datasets are deleted
+3. The changed model directories are committed and pushed, followed by `model_index.csv`, `build_cache.rds` and `report_version.txt`
 
 ## Data Source
 
-Models are built from the [RepoRT](https://github.com/michaelwitting/RepoRT) database:
-- Community-contributed LC-MS retention time data
-- Standardized format with InChI identifiers
-- Multiple chromatographic methods (RP, HILIC)
+Models are built from the [RepoRT](https://github.com/michaelwitting/RepoRT) database of community-contributed LC-MS retention times. `report_version.txt` contains the RepoRT commit used.
 
 ## Citation
 
 If you use these models in your research, please cite:
 
-```
-Stanstrup et al. (2015) PredRet: Prediction of retention time by direct
-mapping between different chromatographic systems. Analytical Chemistry.
-```
+> Stanstrup, J. et al. (2015). PredRet: Prediction of Retention Time by Direct Mapping between Multiple Chromatographic Systems. *Analytical Chemistry*, 87(18), 9421-9428.
 
 And the RepoRT database:
 
-```
-Witting et al. (2023) RepoRT: a comprehensive repository for
-liquid chromatography retention times. Nature Methods.
-```
+> Kretschmer, F. et al. (2024). RepoRT: a comprehensive repository for small molecule retention times. *Nature Methods*, 21, 153-155.
 
 ## License
 
@@ -135,15 +105,7 @@ Code (rePredRet package): GPL-3
 
 ## Links
 
-- **Main package:** https://github.com/stanstrup/rePredRet
-- **Website:** https://stanstrup.github.io/rePredRet/
+- **Main package:** https://github.com/stanstrup-metabolomics/rePredRet
+- **Website:** https://stanstrup-metabolomics.github.io/rePredRet/
 - **RepoRT database:** https://github.com/michaelwitting/RepoRT
-- **Issues:** https://github.com/stanstrup/rePredRet/issues
-
-## Statistics
-
-- **Total models:** ~50,000
-- **Repository size:** ~3.7 GB
-- **Individual model size:** ~73 KB
-- **Last updated:** 2026-01-18
-- **RepoRT version:** master
+- **Issues:** https://github.com/stanstrup-metabolomics/rePredRet/issues
